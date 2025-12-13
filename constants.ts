@@ -1,3 +1,5 @@
+
+
 import { SchoolSettings, TPType } from './types';
 
 // Helper untuk membaca Env Var dengan aman (mendukung Vite, Create-React-App, dan Vercel)
@@ -11,22 +13,15 @@ const getEnv = (key: string) => {
   return "";
 };
 
-// --- KONFIGURASI DATABASE ---
+// --- KONFIGURASI DATABASE (SUPABASE) ---
+// Supabase URL & Key TIDAK BISA disimpan di dalam database itu sendiri (karena butuh kunci untuk membuka database).
+// Jadi ini tetap harus menggunakan Environment Variable atau diisi manual saat build.
+export const SUPABASE_URL = getEnv('REACT_APP_SUPABASE_URL') || getEnv('VITE_SUPABASE_URL') || "";
+export const SUPABASE_KEY = getEnv('REACT_APP_SUPABASE_KEY') || getEnv('VITE_SUPABASE_KEY') || "";
 
-// OPSI 1: JIKA MENGGUNAKAN VERCEL ENVIRONMENT VARIABLES (SETTINGS > ENVIRONMENT VARIABLES)
-// Masukkan Key dengan nama: REACT_APP_SUPABASE_URL dan REACT_APP_SUPABASE_KEY di Dashboard Vercel.
-const ENV_URL = getEnv('REACT_APP_SUPABASE_URL') || getEnv('VITE_SUPABASE_URL');
-const ENV_KEY = getEnv('REACT_APP_SUPABASE_KEY') || getEnv('VITE_SUPABASE_KEY');
-
-// OPSI 2: JIKA TIDAK PAKAI ENV VARS, ISI MANUAL DI BAWAH INI (HARDCODE)
-// Ganti tanda kutip kosong "" di bawah ini dengan URL dan Key dari Supabase Anda.
-export const SUPABASE_URL = ENV_URL || "https://wohhrumqbuwhfulhrlfy.supabase.co"; 
-export const SUPABASE_KEY = ENV_KEY || "sb_publishable_ZSBDUUg7_lXLAKjsurs_9g_JopYWvs_"; 
-
-// --- KONFIGURASI AI (GEMINI) ---
-// Masukkan Key dengan nama: REACT_APP_GEMINI_API_KEY atau VITE_GEMINI_API_KEY di Dashboard Vercel.
-// Atau biarkan kosong agar user bisa menginput manual di menu Pengaturan.
-export const GEMINI_API_KEY = getEnv('REACT_APP_GEMINI_API_KEY') || getEnv('VITE_GEMINI_API_KEY') || "AIzaSyBYpqlIZysrUv_yyIhQIDJu0Ps0VmtVvBY";
+// --- KONFIGURASI AI (GEMINI / GROQ) ---
+// Kunci AI sekarang disimpan di DATABASE (Tabel Settings), jadi di sini kita kosongkan.
+export const GEMINI_API_KEY = ""; 
 
 // -------------------------------------
 
@@ -48,7 +43,9 @@ export const INITIAL_SETTINGS: SchoolSettings = {
   academicYear: "2024/2025",
   reportPlace: "Jakarta",
   reportDate: new Date().toISOString().split('T')[0],
-  logoUrl: ""
+  logoUrl: "",
+  aiProvider: 'groq',
+  aiApiKey: ""
 };
 
 export const TP_CATEGORIES = [TPType.ABP, TPType.JD, TPType.IMTAK];

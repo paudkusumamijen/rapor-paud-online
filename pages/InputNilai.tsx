@@ -1,10 +1,21 @@
-
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { AssessmentLevel, TPType } from '../types';
-import { TP_CATEGORIES, LEVEL_LABELS } from '../constants';
+import { TP_CATEGORIES } from '../constants';
 import { generateCategoryDescription } from '../services/geminiService';
-import { Save, Loader2, Sparkles, Filter, Edit3, CheckCircle2 } from 'lucide-react';
+import { Save, Loader2, Sparkles, Filter, Edit3 } from 'lucide-react';
+
+// Fungsi helper untuk membersihkan tag HTML dari data lama (hasil Quill) agar rapi di Textarea
+const cleanHtml = (html: string) => {
+    if (!html) return "";
+    // Ganti paragraf dan break line dengan newline
+    let text = html.replace(/<\/p>/gi, '\n').replace(/<br\s*\/?>/gi, '\n');
+    // Hapus semua tag HTML lainnya
+    text = text.replace(/<[^>]+>/g, '');
+    // Decode entitas HTML dasar
+    text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    return text.trim();
+};
 
 const InputNilai: React.FC = () => {
   const { students, classes, tps, assessments, categoryResults, upsertAssessment, upsertCategoryResult, settings } = useApp();
@@ -48,13 +59,15 @@ const InputNilai: React.FC = () => {
         const res = categoryResults.find(r => String(r.studentId) === String(selectedStudentId) && r.category === activeCategory);
         if (res) {
             setTeacherKeywords(res.teacherNote || '');
-            setFinalDescription(res.generatedDescription || '');
+            // Bersihkan HTML jika ada (migrasi dari editor lama)
+            const desc = res.generatedDescription || '';
+            setFinalDescription(desc.includes('<') ? cleanHtml(desc) : desc);
         } else {
             setTeacherKeywords('');
             setFinalDescription('');
         }
     }
-  }, [selectedStudentId, activeCategory, assessments, categoryResults]); // Added dependency on assessments/categoryResults for refreshing
+  }, [selectedStudentId, activeCategory, assessments, categoryResults]); 
 
   const handleScoreChange = (tpId: string, score: AssessmentLevel) => {
       setTempScores(prev => ({ ...prev, [tpId]: score }));
@@ -79,18 +92,45 @@ const InputNilai: React.FC = () => {
 
     setIsGenerating(true);
     try {
+        // UPDATED: Pass API Key and Provider from Settings
         const result = await generateCategoryDescription(
             selectedStudent.name,
             activeCategory,
             assessmentsPayload,
-            teacherKeywords
+            teacherKeywords,
+            settings.aiApiKey || "",
+            settings.aiProvider || 'groq'
         );
         setFinalDescription(result);
     } catch (e) {
-        alert("Gagal generate deskripsi.");
+        alert("Gagal menyusun narasi.");
     } finally {
         setIsGenerating(false);
     }
+  };
+
+  const handleGenerateTemplate = () => {
+    if (!selectedStudent) return;
+    
+    // Kumpulkan data TP yang sudah dinilai
+    const assessmentsPayload = categoryTps
+        .filter(tp => tempScores[tp.id]) 
+        .map(tp => ({
+            tp: tp.description,
+            activity: tp.activity,
+            score: tempScores[tp.id]
+        }));
+
+    if (assessmentsPayload.length === 0) {
+        alert("Mohon isi nilai TP pada tabel di atas terlebih dahulu.");
+        return;
+    }
+
+    // Panggil Service Manual (Offline) dengan API Key kosong agar masuk mode offline
+    import('../services/geminiService').then(module => {
+        const result = module.generateTemplateDescription(selectedStudent.name, activeCategory, assessmentsPayload);
+        setFinalDescription(result);
+    });
   };
 
   const handleSaveAll = async () => {
@@ -129,7 +169,7 @@ const InputNilai: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col">
-      <h1 className="text-2xl font-bold text-slate-800 mb-4">Input Nilai & Deskripsi AI</h1>
+      <h1 className="text-2xl font-bold text-slate-800 mb-4">Input Nilai & Deskripsi</h1>
 
       {/* Filter Section */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
@@ -223,11 +263,12 @@ const InputNilai: React.FC = () => {
                             </table>
                         </div>
 
-                        {/* 2. GENERATOR AI & DESKRIPSI */}
+                        {/* 2. GENERATOR AI & DESKRIPSI (TEXTAREA) */}
                         <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Sparkles size={18} className="text-indigo-600"/> Generate Deskripsi Guru</h3>
+                            <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Sparkles size={18} className="text-indigo-600"/> Susun Deskripsi Narasi</h3>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                {/* KOLOM KIRI: INPUT AI */}
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Kata Kunci / Catatan Guru (Opsional)</label>
                                     <textarea 
@@ -236,23 +277,41 @@ const InputNilai: React.FC = () => {
                                         value={teacherKeywords}
                                         onChange={e => setTeacherKeywords(e.target.value)}
                                     />
-                                    <button 
-                                        onClick={handleGenerateAI}
-                                        disabled={isGenerating}
-                                        className="mt-3 w-full bg-indigo-600 text-white py-2 rounded-lg font-bold shadow hover:bg-indigo-700 flex justify-center items-center gap-2"
-                                    >
-                                        {isGenerating ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}
-                                        {isGenerating ? "Sedang Menyusun..." : "Buat Deskripsi Otomatis"}
-                                    </button>
+                                    <div className="mt-3 flex gap-2 flex-col lg:flex-row">
+                                        <button 
+                                            onClick={handleGenerateAI}
+                                            disabled={isGenerating}
+                                            className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-bold shadow hover:bg-indigo-700 flex justify-center items-center gap-2 text-sm"
+                                        >
+                                            {isGenerating ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}
+                                            {isGenerating ? "Sedang Menyusun..." : `Susun Narasi Otomatis`}
+                                        </button>
+                                        <button 
+                                            onClick={handleGenerateTemplate}
+                                            className="flex-1 bg-white border border-slate-300 text-slate-700 py-2 rounded-lg font-bold hover:bg-slate-50 flex justify-center items-center gap-2 text-sm"
+                                        >
+                                            Gunakan Template
+                                        </button>
+                                    </div>
+                                    {!settings.aiApiKey && (
+                                        <p className="text-xs text-orange-600 mt-2 text-center">
+                                            *Kode Lisensi Layanan belum disetting. Gunakan Template Offline atau atur di Pengaturan.
+                                        </p>
+                                    )}
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-2">Deskripsi Rapor (Hasil AI)</label>
-                                    <textarea 
-                                        className="w-full p-3 border rounded-lg bg-white text-slate-800 text-sm h-32 leading-relaxed focus:ring-2 focus:ring-teal-500 outline-none"
-                                        placeholder="Hasil deskripsi akan muncul di sini. Anda bisa mengeditnya sebelum disimpan."
-                                        value={finalDescription}
-                                        onChange={e => setFinalDescription(e.target.value)}
-                                    />
+
+                                {/* KOLOM KANAN: DESKRIPSI TEXTAREA */}
+                                <div className="flex flex-col">
+                                    <label className="block text-sm font-bold text-slate-700 mb-2">Deskripsi Rapor</label>
+                                    <div className="flex-1">
+                                         <textarea 
+                                            value={finalDescription} 
+                                            onChange={(e) => setFinalDescription(e.target.value)} 
+                                            className="w-full p-3 border rounded-lg bg-white text-slate-800 h-64 focus:ring-2 focus:ring-teal-500 outline-none leading-relaxed resize-none text-sm"
+                                            placeholder="Hasil deskripsi akan muncul di sini. Silakan edit teks sesuai kebutuhan..."
+                                         />
+                                         <p className="text-xs text-slate-400 mt-2 text-right">Tekan Enter untuk baris baru.</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -1,34 +1,141 @@
-
-import React from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { LayoutDashboard, Users, GraduationCap, BookOpen, PenTool, Printer, Settings, Star, MessageCircle, FileText, CalendarCheck, X } from 'lucide-react';
+import { 
+  LayoutDashboard, Users, GraduationCap, BookOpen, PenTool, Printer, Settings, 
+  Star, MessageCircle, FileText, CalendarCheck, X, ChevronDown, ChevronRight, Database, ClipboardList, LogOut
+} from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { settings } = useApp();
+type MenuItem = {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  to?: string;
+  children?: MenuItem[];
+};
 
-  const navItems = [
-    { to: "/", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
-    { to: "/kelas", icon: <Users size={20} />, label: "Data Kelas" },
-    { to: "/siswa", icon: <GraduationCap size={20} />, label: "Data Siswa" },
-    { to: "/tp", icon: <BookOpen size={20} />, label: "Input TP" },
-    { to: "/nilai", icon: <PenTool size={20} />, label: "Input Nilai & AI" },
-    { to: "/kokurikuler", icon: <Star size={20} />, label: "Kokurikuler (P5)" },
-    { to: "/refleksi", icon: <MessageCircle size={20} />, label: "Refleksi Ortu" },
-    { to: "/catatan", icon: <FileText size={20} />, label: "Catatan Anak" },
-    { to: "/kehadiran", icon: <CalendarCheck size={20} />, label: "Kehadiran" },
-    { to: "/cetak", icon: <Printer size={20} />, label: "Cetak Rapor" },
-    { to: "/pengaturan", icon: <Settings size={20} />, label: "Pengaturan" },
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+  const { settings, user, logout, confirmAction } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+
+  const handleLogout = async () => {
+    const isConfirmed = await confirmAction(
+        "Apakah Anda yakin ingin keluar dari aplikasi?",
+        "Konfirmasi Keluar",
+        "Ya, Keluar Aplikasi",
+        "logout"
+    );
+
+    if (isConfirmed) {
+        logout();
+        navigate('/');
+    }
+  };
+
+  const menuStructure: MenuItem[] = [
+    { 
+      key: 'dashboard', 
+      to: "/", 
+      icon: <LayoutDashboard size={20} />, 
+      label: "Dashboard" 
+    },
+    {
+      key: 'master',
+      label: "Data Master",
+      icon: <Database size={20} />,
+      children: [
+        { key: 'kelas', to: "/kelas", icon: <Users size={18} />, label: "Data Kelas" },
+        { key: 'siswa', to: "/siswa", icon: <GraduationCap size={18} />, label: "Data Siswa" },
+        { key: 'tp', to: "/tp", icon: <BookOpen size={18} />, label: "Input TP" },
+        { key: 'data_p5', to: "/data-p5", icon: <Star size={18} />, label: "Data P5 (Projek)" },
+      ]
+    },
+    {
+      key: 'nilai',
+      label: "Input Nilai",
+      icon: <ClipboardList size={20} />,
+      children: [
+        { key: 'input_nilai', to: "/nilai", icon: <PenTool size={18} />, label: "Nilai Intrakurikuler" },
+        { key: 'nilai_p5', to: "/nilai-p5", icon: <Star size={18} />, label: "Nilai P5 (Projek)" },
+        { key: 'refleksi', to: "/refleksi", icon: <MessageCircle size={18} />, label: "Refleksi Ortu" },
+        { key: 'catatan', to: "/catatan", icon: <FileText size={18} />, label: "Catatan Anak" },
+        { key: 'kehadiran', to: "/kehadiran", icon: <CalendarCheck size={18} />, label: "Kehadiran" },
+      ]
+    },
+    { 
+      key: 'cetak', 
+      to: "/cetak", 
+      icon: <Printer size={20} />, 
+      label: "Cetak Rapor" 
+    },
+    { 
+      key: 'pengaturan', 
+      to: "/pengaturan", 
+      icon: <Settings size={20} />, 
+      label: "Pengaturan" 
+    },
   ];
+
+  // FILTER MENU BASED ON ROLE
+  const filteredMenu = menuStructure.filter(item => {
+      if (!user) return false;
+      if (user.role === 'admin') return true; 
+      
+      // Guru Restrictions
+      if (user.role === 'guru') {
+          const allowedKeys = ['dashboard', 'nilai', 'cetak'];
+          return allowedKeys.includes(item.key);
+      }
+
+      // Orang Tua Restrictions
+      if (user.role === 'orangtua') {
+        // Orang Tua hanya bisa melihat menu Refleksi.
+        // Karena refleksi ada di dalam children 'nilai', kita perlu logic khusus atau memindahkannya.
+        // Untuk simplisitas, jika role orangtua, kita buat menu custom.
+        return false; 
+      }
+      return false;
+  });
+
+  // Custom Menu for Orang Tua
+  const parentMenu: MenuItem[] = [
+      { key: 'refleksi_ortu', to: "/refleksi", icon: <MessageCircle size={20} />, label: "Refleksi Orang Tua" }
+  ];
+
+  const finalMenu = user?.role === 'orangtua' ? parentMenu : filteredMenu;
+
+  // Auto expand menu
+  useEffect(() => {
+    const newOpenState = { ...openMenus };
+    let hasChange = false;
+
+    finalMenu.forEach(item => {
+      if (item.children) {
+        const isChildActive = item.children.some(child => child.to === location.pathname);
+        if (isChildActive && !newOpenState[item.key]) {
+          newOpenState[item.key] = true;
+          hasChange = true;
+        }
+      }
+    });
+
+    if (hasChange) setOpenMenus(newOpenState);
+  }, [location.pathname, user?.role]);
+
+  const toggleMenu = (key: string) => {
+    setOpenMenus(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   return (
     <>
-      {/* Sidebar Container */}
       <aside 
         className={`
           fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white transition-transform duration-300 ease-in-out shadow-2xl
@@ -39,7 +146,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <div className="flex flex-col h-full">
           {/* Header Sidebar */}
           <div className="p-6 border-b border-slate-700 flex flex-col items-center text-center relative">
-             {/* Close Button (Mobile Only) - Absolute positioning */}
              <button 
               onClick={onClose}
               className="md:hidden absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
@@ -47,8 +153,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               <X size={24} />
             </button>
 
-            {/* Logo Container */}
-            <div className="w-20 h-20 bg-white rounded-full p-1 mb-3 flex items-center justify-center overflow-hidden border-4 border-slate-600 shadow-lg">
+            <div className="w-16 h-16 bg-white rounded-full p-1 mb-3 flex items-center justify-center overflow-hidden border-4 border-slate-600 shadow-lg">
                 <img 
                     src={settings.logoUrl || "https://cdn-icons-png.flaticon.com/512/2997/2997300.png"} 
                     alt="Logo Sekolah" 
@@ -56,41 +161,85 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 />
             </div>
             
-            {/* Title Text */}
             <div>
               <h1 className="text-lg font-bold text-white tracking-wide">
                 Rapor Merdeka
               </h1>
-              <p className="text-sm font-semibold text-teal-400 mt-1">
-                PAUD KUSUMA Mijen
+              <p className="text-xs font-semibold text-teal-400 mt-1 uppercase tracking-wider">
+                {user?.role === 'admin' ? 'Administrator' : user?.role === 'guru' ? 'Guru Kelas' : 'Orang Tua'}
               </p>
             </div>
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                onClick={onClose} // Auto close sidebar on mobile when link clicked
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? "bg-teal-600 text-white shadow-lg translate-x-1"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`
-                }
-              >
-                {item.icon}
-                <span className="font-medium text-sm">{item.label}</span>
-              </NavLink>
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
+            {finalMenu.map((item) => (
+              <div key={item.key} className="mb-1">
+                {item.children ? (
+                  <div>
+                    <button
+                      onClick={() => toggleMenu(item.key)}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-colors duration-200 text-slate-300 hover:bg-slate-800 hover:text-white ${openMenus[item.key] ? 'bg-slate-800 text-white' : ''}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.icon}
+                        <span className="font-medium text-sm">{item.label}</span>
+                      </div>
+                      {openMenus[item.key] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </button>
+                    
+                    {openMenus[item.key] && (
+                      <div className="ml-4 pl-4 border-l border-slate-700 mt-1 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                        {item.children.map(child => (
+                          <NavLink
+                            key={child.key}
+                            to={child.to!}
+                            onClick={onClose}
+                            className={({ isActive }) =>
+                              `flex items-center gap-3 px-4 py-2 rounded-lg transition-all duration-200 text-sm ${
+                                isActive
+                                  ? "bg-teal-600 text-white shadow-md"
+                                  : "text-slate-400 hover:text-white hover:bg-slate-800"
+                              }`
+                            }
+                          >
+                            {child.icon}
+                            <span>{child.label}</span>
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <NavLink
+                    to={item.to!}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                        isActive
+                          ? "bg-teal-600 text-white shadow-lg"
+                          : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      }`
+                    }
+                  >
+                    {item.icon}
+                    <span className="font-medium text-sm">{item.label}</span>
+                  </NavLink>
+                )}
+              </div>
             ))}
           </nav>
 
-          {/* Footer Sidebar */}
-          <div className="p-4 border-t border-slate-700 text-center bg-slate-900">
-            <p className="text-xs text-slate-500">v1.1.0 &copy; 2025</p>
+          {/* Footer Sidebar (Logout) */}
+          <div className="p-4 border-t border-slate-700 bg-slate-900">
+             <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors text-sm font-bold shadow-md"
+             >
+                 <LogOut size={16} /> Keluar Aplikasi
+             </button>
+            <p className="text-[10px] text-slate-500 tracking-widest mt-3 text-center">Versi Aplikasi 1.0 &copy; 2025</p>
+            <p className="text-xs font-semibold text-teal-400 mt-0 uppercase tracking-wider text-center">{settings.name || "PAUD KUSUMA"}</p>
           </div>
         </div>
       </aside>
